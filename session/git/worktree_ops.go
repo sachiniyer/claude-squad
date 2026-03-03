@@ -1,6 +1,7 @@
 package git
 
 import (
+	"claude-squad/config"
 	"claude-squad/log"
 	"fmt"
 	"os"
@@ -12,17 +13,16 @@ import (
 // Setup creates a new worktree for the session
 func (g *GitWorktree) Setup() error {
 	// Ensure worktrees directory exists early (can be done in parallel with branch check)
-	worktreesDir, err := getWorktreeDirectory()
-	if err != nil {
-		return fmt.Errorf("failed to get worktree directory: %w", err)
+	if g.worktreeDir == "" {
+		return fmt.Errorf("failed to get worktree directory: empty worktree directory")
 	}
 
-	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+	if err := os.MkdirAll(g.worktreeDir, 0755); err != nil {
 		return err
 	}
 
 	// Check if branch exists using git CLI (much faster than go-git PlainOpen)
-	_, err = g.runGitCommand(g.repoPath, "show-ref", "--verify", fmt.Sprintf("refs/heads/%s", g.branchName))
+	_, err := g.runGitCommand(g.repoPath, "show-ref", "--verify", fmt.Sprintf("refs/heads/%s", g.branchName))
 	branchExists := err == nil
 
 	if branchExists {
@@ -134,11 +134,24 @@ func (g *GitWorktree) Prune() error {
 func CleanupWorktrees() error {
 	worktreesDir, err := getWorktreeDirectory()
 	if err != nil {
-		return fmt.Errorf("failed to get worktree directory: %w", err)
+		cfg := config.LoadConfig()
+		if cfg.WorktreeRoot == config.WorktreeRootSibling {
+			cwd, cwdErr := os.Getwd()
+			if cwdErr != nil {
+				return fmt.Errorf("failed to get current directory for sibling worktree cleanup: %w", cwdErr)
+			}
+			worktreesDir, err = getWorktreeDirectoryForRepo(cwd)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to get worktree directory: %w", err)
+		}
 	}
 
 	entries, err := os.ReadDir(worktreesDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return fmt.Errorf("failed to read worktree directory: %w", err)
 	}
 

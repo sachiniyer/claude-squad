@@ -9,6 +9,26 @@ import (
 )
 
 func getWorktreeDirectory() (string, error) {
+	return getWorktreeDirectoryForRepo("")
+}
+
+func getWorktreeDirectoryForRepo(repoPath string) (string, error) {
+	cfg := config.LoadConfig()
+	if cfg.WorktreeRoot == config.WorktreeRootSibling {
+		if repoPath == "" {
+			return "", fmt.Errorf("repo path is required when worktree_root is %q", config.WorktreeRootSibling)
+		}
+
+		repoRoot, err := findGitRepoRoot(repoPath)
+		if err != nil {
+			return "", err
+		}
+
+		repoParent := filepath.Dir(repoRoot)
+		repoName := filepath.Base(repoRoot)
+		return filepath.Join(repoParent, repoName+"-worktrees"), nil
+	}
+
 	configDir, err := config.GetConfigDir()
 	if err != nil {
 		return "", err
@@ -23,6 +43,8 @@ type GitWorktree struct {
 	repoPath string
 	// Path to the worktree
 	worktreePath string
+	// Root directory containing all worktrees for this repo/config mode
+	worktreeDir string
 	// Name of the session
 	sessionName string
 	// Branch name for the worktree
@@ -35,6 +57,7 @@ func NewGitWorktreeFromStorage(repoPath string, worktreePath string, sessionName
 	return &GitWorktree{
 		repoPath:      repoPath,
 		worktreePath:  worktreePath,
+		worktreeDir:   filepath.Dir(worktreePath),
 		sessionName:   sessionName,
 		branchName:    branchName,
 		baseCommitSHA: baseCommitSHA,
@@ -62,7 +85,7 @@ func NewGitWorktree(repoPath string, sessionName string) (tree *GitWorktree, bra
 		return nil, "", err
 	}
 
-	worktreeDir, err := getWorktreeDirectory()
+	worktreeDir, err := getWorktreeDirectoryForRepo(repoPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -76,6 +99,7 @@ func NewGitWorktree(repoPath string, sessionName string) (tree *GitWorktree, bra
 		sessionName:  sessionName,
 		branchName:   branchName,
 		worktreePath: worktreePath,
+		worktreeDir:  worktreeDir,
 	}, branchName, nil
 }
 
